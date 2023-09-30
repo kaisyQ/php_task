@@ -1,73 +1,50 @@
 <?php
 
-$pdo = new PDO('mysql:host=localhost;dbname=test_task', 'root', '99145673ffF');
-$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-$pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES, false);
+$db_name = '';
+$db_user = '';
+$db_pass = '';
 
 
-$selectedGroupId = isset($_GET['groupId']) ? $_GET['groupId'] : 0;
+$pdo = new PDO('mysql:host=localhost;dbname=' . $db_name, $$db_user, $db_pass);
 
-// Функция для получения количества товаров в группе и всех ее подгруппах
-function getProductsCount($pdo, $groupId) {
-    // Получаем список подгрупп группы
-    $stmt = $pdo->prepare('SELECT id FROM test_task.groups WHERE id_parent = :id');
-    $stmt->execute(['id' => $groupId]);
-    $subgroups = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-    // Добавляем id группы в список подгрупп
-    $subgroups[] = $groupId;
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $url = $_POST['url'];
+    $shortCode = generateShortCode();
 
-    // Составляем список id всех товаров в группе и ее подгруппах
-    $inClause = implode(',', array_fill(0, count($subgroups), '?'));
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM test_task.products WHERE id_group IN ($inClause)");
-    $stmt->execute($subgroups);
-    return $stmt->fetchColumn();
-}
 
-// Функция для вывода списка групп
-function printGroups($pdo, $parentId, $level = 0) {
-    global $selectedGroupId;
-    // Получаем список групп с указанным id_parent
-    $stmt = $pdo->prepare('SELECT * FROM test_task.groups WHERE id_parent = :id');
-    $stmt->execute(['id' => $parentId]);
-    $groups = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $stmt = $pdo->prepare("INSERT INTO $db_name" . "urls (short_code, long_code) VALUES (?, ?)");
+    $stmt->execute([
+        $shortCode, $url
+    ]);
 
-    // Выводим список групп
-    echo "<ul>";
-    foreach ($groups as $group) {
-        // Выводим название группы и количество товаров в ней и ее подгруппах
-        $productsCount = getProductsCount($pdo, $group['id']);
-        echo "<li>";
-        echo str_repeat("&nbsp;", $level * 4); // Отступ для вложенных групп
-        echo "<a href=\"?groupId={$group['id']}\">{$group['name']}</a> ({$productsCount})";
+    echo json_encode(['short_code' => $shortCode]);
+} else  {
 
-        // Если группа выбрана, выводим список ее подгрупп и товаров
-        if ($selectedGroupId == $group['id']) {
-            printGroups($pdo, $group['id'], $level + 1);
-            printProducts($pdo, $group['id']);
-        }
+    $shortCode = $_GET['code'];
 
-        echo "</li>";
+    $stmt = $pdo->prepare("SELECT long_code FROM $db_name" . ".urls WHERE short_code = ?");
+    $stmt->execute([$shortCode]);
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($result) {
+        header("Location: " . $result['long_code']);
+        exit();
+    } else {
+        http_response_code(404);
+        echo "Short code not found";
     }
-    echo "</ul>";
+
 }
 
-// Функция для вывода списка товаров в группе
-function printProducts($pdo, $groupId) {
-    // Получаем список всех товаров в группе и ее подгруппах
-    $stmt = $pdo->prepare('SELECT * FROM test_task.products WHERE id_group IN (SELECT id FROM test_task.groups WHERE id = :id OR id_parent = :id)');
-    $stmt->execute(['id' => $groupId]);
-    $products = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Выводим список товаров
-    echo "<ul>";
-    foreach ($products as $product) {
-        echo "<li>{$product['name']}</li>";
+
+
+function generateShortCode() {
+    $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    $code = '';
+    for ($i = 0; $i < 7; $i++) {
+        $code .= $characters[rand(0, strlen($characters) - 1)];
     }
-    echo "</ul>";
+    return $code;
 }
-
-// Выводим список групп первого уровня и все товары
-printGroups($pdo, 0);
-printProducts($pdo, 0);
-
